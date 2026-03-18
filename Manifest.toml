@@ -1,0 +1,12 @@
+[package]
+name = "debugger"
+version = "0.1.0"
+edition = "2022"
+type = "plugin"
+
+# See more keys and their definitions at https://mush.javanile.org/manifest.html
+
+[dependencies]
+
+[features]
+debug = "true"
