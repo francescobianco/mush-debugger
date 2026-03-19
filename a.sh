@@ -1,5 +1,15 @@
 #!/bin/bash
 
+# ─── debugger state ──────────────────────────────────────────────────────────
+
+__DBG_ACTIVE=0
+__DBG_VARS=()
+
+__breakpoint() {
+  __DBG_ACTIVE=1
+  __DBG_VARS=("$@")
+}
+
 # ─── debugger handler ────────────────────────────────────────────────────────
 
 __dbg_read_key() {
@@ -14,6 +24,8 @@ __dbg_read_key() {
 }
 
 handler() {
+  [[ $__DBG_ACTIVE -eq 0 ]] && return
+
   local file="$1"
   local lineno="$2"
   local cmd="$3"
@@ -22,10 +34,20 @@ handler() {
   cols=$(tput cols)
   rows=$(tput lines)
 
-  # ── clear & header ruler ─────────────────────────────────────────────────
+  # gutter: "> 1234  " or "  1234  " = 8 chars; content is truncated to fit
+  local gutter=8
+  local max_content=$(( cols - gutter ))
+
+  # ── layout heights ────────────────────────────────────────────────────────
+  # fixed: header=1, cmd_bar=1, footer=1 → +vars bar if vars present
+  local vars_rows=0
+  [[ ${#__DBG_VARS[@]} -gt 0 ]] && vars_rows=1
+  local code_rows=$(( rows - 3 - vars_rows ))
+  local CONTEXT=$(( (code_rows - 1) / 2 ))
+
+  # ── clear & header ────────────────────────────────────────────────────────
   clear
 
-  # header: " <filename bold>  :<lineno normal> " padded to full width
   local hdr_prefix=" "
   local hdr_file="$file"
   local hdr_sep="  :"
@@ -36,11 +58,7 @@ handler() {
   printf '\033[0;44;97m%s\033[1;44;97m%s\033[0;44;97m%s%s%s%*s\033[0m\n' \
     "$hdr_prefix" "$hdr_file" "$hdr_sep" "$hdr_line" "$hdr_suffix" "$hdr_pad" ""
 
-  # ── compute view window ──────────────────────────────────────────────────
-  # fixed rows: header=1, cmd_bar=1, footer=1 → code gets rows-3
-  local code_rows=$(( rows - 3 ))
-  local CONTEXT=$(( (code_rows - 1) / 2 ))
-
+  # ── compute view window ───────────────────────────────────────────────────
   local total
   total=$(wc -l < "$file")
   local start=$(( lineno - CONTEXT ))
@@ -52,6 +70,8 @@ handler() {
   while IFS= read -r src_line; do
     local nr="${src_line%%	*}"
     local content="${src_line#*	}"
+    # truncate content to available width
+    content="${content:0:$max_content}"
     if (( nr == lineno )); then
       printf '\033[1;93m>\033[0m \033[1;93m%4d\033[0m  \033[1;97m%s\033[0m\n' \
         "$nr" "$content"
@@ -60,23 +80,31 @@ handler() {
     fi
   done < <(awk -v s="$start" -v e="$end" 'NR>=s && NR<=e { print NR"\t"$0 }' "$file")
 
-  # ── command bar ──────────────────────────────────────────────────────────
-  local cmd_label=" cmd: $cmd"
-  local cmd_pad=$(( cols - ${#cmd_label} ))
-  printf '\033[2;90m%s%*s\033[0m\n' "$cmd_label" "$cmd_pad" ""
+  # ── command bar ───────────────────────────────────────────────────────────
+  local cmd_label=" cmd: ${cmd:0:$(( cols - 7 ))}"
+  printf '\033[2;90m%-*s\033[0m\n' "$cols" "$cmd_label"
 
-  # fill empty lines to push footer to bottom
+  # fill empty lines to push vars+footer to bottom
   local actual_code=$(( end - start + 1 ))
   local filler=$(( code_rows - actual_code ))
   if (( filler > 0 )); then
     head -c "$filler" /dev/zero | tr '\0' '\n'
   fi
 
-  # ── keybinding bar ───────────────────────────────────────────────────────
+  # ── vars watch bar ────────────────────────────────────────────────────────
+  if (( vars_rows > 0 )); then
+    local vars_str=" "
+    for v in "${__DBG_VARS[@]}"; do
+      vars_str+="$v=${!v}   "
+    done
+    printf '\033[0;100;97m%-*s\033[0m\n' "$cols" "$vars_str"
+  fi
+
+  # ── keybinding bar ────────────────────────────────────────────────────────
   printf '\033[1;44;97m %-*s\033[0m' $(( cols - 2 )) \
     "[↓/n] step  [c] continue  [q] quit"
 
-  # ── wait for input ───────────────────────────────────────────────────────
+  # ── wait for input ────────────────────────────────────────────────────────
   local key
   key=$(__dbg_read_key)
 
@@ -90,7 +118,6 @@ handler() {
       trap - DEBUG
       ;;
     $'\x1b[B'|n|N|'')
-      # step / down arrow / enter → just return and let DEBUG fire again
       ;;
   esac
 }
@@ -103,4 +130,8 @@ echo "Hello from the debugger"
 NAME="world"
 echo "Name is: $NAME"
 X=$(( 6 * 7 ))
+__breakpoint X NAME
 echo "6 * 7 = $X"
+echo "Ciao"
+
+
