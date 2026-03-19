@@ -1,0 +1,5 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Mush Debugger" type="RsRemoteRunConfiguration" debuggerKind="GDB" remoteCommand="tcp:localhost:1234" symbolFile="" sysroot="">
+    <method v="2" />
+  </configuration>
+</component>
