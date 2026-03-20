@@ -2,8 +2,10 @@
 
 #extern package cavalla
 
+#echo "A1"
 embed handler
 #handler
+#echo "A2"
 
 __breakpoint() {
   echo "Debug"
